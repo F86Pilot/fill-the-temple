@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c8955c">
+<title>Fill the Temple</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #3b2a1a;
+    --muted: #7a6450;
+    --kraft: #c8955c;
+    --kraft-dark: #a8743f;
+    --paint: #f6f1e6;
+    --red: #e0533d;
+  }
+  * { box-sizing: border-box; }
+  button, input { font-family: inherit; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; min-height: 100dvh; background: var(--kraft); color: var(--ink);
+         font-family: 'Fredoka', system-ui, sans-serif; font-size: 18px; }
+  main { max-width: 480px; margin: 0 auto; padding: 20px 16px calc(32px + env(safe-area-inset-bottom)); }
+
+  h1 { margin: 4px 0 2px; font-size: 38px; line-height: 1; color: #fff; text-shadow: 2px 2px 0 var(--kraft-dark);
+       transform: rotate(-1.5deg); }
+  .sub { margin: 6px 0 18px; color: #fff4dd; font-weight: 500; }
+
+  .card { background: var(--paint); border-radius: 14px; box-shadow: 4px 5px 0 var(--kraft-dark); padding: 16px; }
+  .card + .card { margin-top: 14px; }
+
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 0 12px 12px; border-left: 6px solid var(--c); }
+  .row + .row { margin-top: 6px; }
+  .row .label { flex: 1; min-width: 0; }
+  .row .name { font-weight: 600; font-size: 19px; line-height: 1.15; }
+  .row .hint { color: var(--muted); font-size: 14px; }
+  .stepper { display: flex; align-items: center; gap: 6px; flex: none; }
+  .stepper button { width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--c); color: #fff;
+                    font-weight: 700; font-size: 26px; touch-action: manipulation; cursor: pointer; }
+  .stepper button:disabled { opacity: .3; }
+  .stepper input { width: 46px; height: 44px; border: 2px solid #e2d6c2; border-radius: 10px; text-align: center;
+                   font-weight: 700; font-size: 22px; color: var(--ink); background: #fff;
+                   -moz-appearance: textfield; }
+  .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  label.field { display: block; font-weight: 600; }
+  label.field small { display: block; font-weight: 400; color: var(--muted); font-size: 14px; margin-top: 2px; }
+  label.field input { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 2px solid #e2d6c2;
+                      border-radius: 10px; font-weight: 500; font-size: 18px; color: var(--ink); background: #fff; }
+
+  .go { display: block; width: 100%; margin-top: 18px; padding: 16px; border: 0; border-radius: 14px;
+        background: var(--red); color: #fff; font-weight: 700; font-size: 24px;
+        box-shadow: 4px 5px 0 #9c3424; cursor: pointer; }
+  .go:disabled { opacity: .55; }
+  .go:active:not(:disabled) { transform: translate(2px, 3px); box-shadow: 2px 2px 0 #9c3424; }
+  .error { min-height: 1.4em; margin: 10px 2px 0; color: #fff; font-weight: 600; }
+
+  #thanks { text-align: center; padding: 28px 18px; }
+  #thanks h2 { margin: 0 0 8px; font-size: 34px; color: var(--red); }
+  #thanks p { margin: 0 0 6px; }
+  #thanks .go { margin-top: 22px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fill the Temple</h1>
+  <p class="sub">Add the ordinances your family completed and watch them jump into the temple on the lobby TV.</p>
+
+  <form id="form" novalidate>
+    <div class="card" id="rows"></div>
+    <div class="card">
+      <label class="field">Your name or family <span style="font-weight:400">(optional)</span>
+        <small>Only the challenge organizers see this. It never shows on the TV.</small>
+        <input id="name" autocomplete="name" maxlength="80" placeholder="e.g. The Smith family">
+      </label>
+    </div>
+    <button class="go" id="go" disabled>Add to the temple</button>
+    <p class="error" id="error" role="alert"></p>
+  </form>
+
+  <div class="card" id="thanks" hidden>
+    <h2>Thank you!</h2>
+    <p id="thanksText"></p>
+    <p>Look for them on the lobby TV.</p>
+    <button class="go" id="again">Report more</button>
+  </div>
+</main>
+
+<script>
+(() => {
+  const MAX = 99;
+  const TYPES = [
+    { key: 'baptism',    name: 'Baptisms',     color: '#3fa0e8' },
+    { key: 'initiatory', name: 'Initiatories', color: '#e0a50f' },
+    { key: 'endowment',  name: 'Endowments',   color: '#45b86f' },
+    { key: 'sealCouple', name: 'Sealings: couples',           hint: 'Count each couple once', color: '#f05b7d' },
+    { key: 'sealChild',  name: 'Sealings: children to parents', hint: 'Count each child', color: '#9d6cf0' },
+  ];
+  const $ = id => document.getElementById(id);
+  const inputs = {};
+  let clientId = crypto.randomUUID();
+
+  TYPES.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.setProperty('--c', t.color);
+    row.innerHTML = `
+      <div class="label"><div class="name">${t.name}</div>${t.hint ? `<div class="hint">${t.hint}</div>` : ''}</div>
+      <div class="stepper">
+        <button type="button" aria-label="One fewer ${t.name}">−</button>
+        <input type="number" inputmode="numeric" min="0" max="${MAX}" value="0" aria-label="${t.name}">
+        <button type="button" aria-label="One more ${t.name}">+</button>
+      </div>`;
+    const [minus, plus] = row.querySelectorAll('button');
+    const input = row.querySelector('input');
+    minus.onclick = () => set(t.key, val(t.key) - 1);
+    plus.onclick = () => set(t.key, val(t.key) + 1);
+    input.oninput = () => set(t.key, val(t.key), true);
+    input.onfocus = () => input.select();
+    inputs[t.key] = { input, minus, plus };
+    $('rows').appendChild(row);
+  });
+
+  function val(key) { return Math.min(MAX, Math.max(0, parseInt(inputs[key].input.value, 10) || 0)); }
+  function set(key, n, typing) {
+    const { input, minus, plus } = inputs[key];
+    n = Math.min(MAX, Math.max(0, n));
+    if (!typing || input.value !== '') input.value = n;
+    minus.disabled = n <= 0;
+    plus.disabled = n >= MAX;
+    $('go').disabled = !TYPES.some(t => val(t.key) > 0);
+    $('error').textContent = '';
+  }
+  TYPES.forEach(t => set(t.key, 0));
+
+  try { $('name').value = localStorage.getItem('name') || ''; } catch {}
+
+  $('form').onsubmit = async e => {
+    e.preventDefault();
+    const body = { clientId, name: $('name').value.trim() };
+    TYPES.forEach(t => body[t.key] = val(t.key));
+    $('go').disabled = true;
+    $('go').textContent = 'Sending…';
+    try {
+      const res = await fetch('/api/submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
+      try { localStorage.setItem('name', body.name); } catch {}
+      const n = TYPES.reduce((s, t) => s + body[t.key], 0);
+      $('thanksText').textContent = `You added ${n} ordinance${n === 1 ? '' : 's'} to the temple.`;
+      $('form').hidden = true;
+      $('thanks').hidden = false;
+      clientId = crypto.randomUUID();
+      TYPES.forEach(t => set(t.key, 0));
+    } catch (err) {
+      // Keep the same clientId so a retry can't be counted twice.
+      $('error').textContent = err.message === 'Failed to fetch' ? 'No connection. Check your signal and try again.' : err.message;
+      $('go').disabled = false;
+    }
+    $('go').textContent = 'Add to the temple';
+  };
+
+  $('again').onclick = () => { $('thanks').hidden = true; $('form').hidden = false; scrollTo(0, 0); };
+})();
+</script>
+</body>
+</html>

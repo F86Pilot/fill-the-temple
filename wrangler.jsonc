@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fill-the-temple",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  // public/index.html is the phone form (what the QR opens), /tv is the lobby display, /admin is for organizers.
+  "assets": { "directory": "public" },
+  "durable_objects": {
+    "bindings": [{ "name": "TEMPLE", "class_name": "Temple" }]
+  },
+  // SQLite-backed Durable Objects are available on the free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Temple"] }]
+}

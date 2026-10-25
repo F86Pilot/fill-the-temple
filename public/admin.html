@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Temple Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --ink: #3b2a1a; --muted: #7a6450; --kraft: #c8955c; --kraft-dark: #a8743f; --paint: #f6f1e6; --line: #e2d6c2; --red: #e0533d; }
+  * { box-sizing: border-box; }
+  button, input { font-family: inherit; }
+  body { margin: 0; min-height: 100dvh; background: var(--kraft); color: var(--ink); font-family: 'Fredoka', system-ui, sans-serif; font-size: 16px; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { margin: 0 0 14px; color: #fff; font-size: 32px; text-shadow: 2px 2px 0 var(--kraft-dark); }
+  .card { background: var(--paint); border-radius: 14px; box-shadow: 4px 5px 0 var(--kraft-dark); padding: 16px; margin-bottom: 14px; }
+  .btn { border: 0; border-radius: 10px; padding: 9px 14px; font-size: 16px; font-weight: 600; cursor: pointer; background: var(--ink); color: #fff; }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.light { background: #fff; color: var(--ink); border: 2px solid var(--line); }
+  .btn.del { background: transparent; color: var(--red); border: 2px solid currentColor; padding: 5px 10px; font-size: 14px; }
+
+  #login input { width: 100%; padding: 11px; margin: 8px 0 12px; border: 2px solid var(--line); border-radius: 10px; font-size: 17px; }
+  .error { color: var(--red); font-weight: 600; min-height: 1.3em; margin: 8px 0 0; }
+
+  .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+  .total { border-top: 6px solid var(--c); background: #fff; border-radius: 10px; padding: 8px 10px; }
+  .total b { display: block; font-size: 28px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .total span { color: var(--muted); font-size: 14px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .bar h2 { margin: 0; font-size: 20px; }
+
+  .wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; }
+  td.n, th.n { text-align: center; }
+  td.who { white-space: normal; min-width: 120px; }
+  td .anon { color: var(--muted); font-style: italic; }
+  .empty { color: var(--muted); text-align: center; padding: 20px; }
+  .goal h2 { margin: 0 0 4px; font-size: 20px; }
+  .goal p { margin: 0 0 12px; color: var(--muted); }
+  .goal form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .goal input { width: 110px; padding: 9px 10px; border: 2px solid var(--line); border-radius: 10px; font-size: 18px; font-weight: 600; }
+  .meter { height: 14px; border-radius: 7px; background: #e9dfcf; overflow: hidden; margin-top: 12px; }
+  .meter div { height: 100%; background: linear-gradient(90deg, #3fa0e8, #45b86f, #f2b829, #f05b7d, #9d6cf0); transition: width .3s; }
+  .goal .status { margin: 8px 0 0; color: var(--ink); font-weight: 500; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fill the Temple · Admin</h1>
+
+  <form class="card" id="login" hidden>
+    <label for="key"><b>Admin key</b></label>
+    <input id="key" type="password" autocomplete="current-password">
+    <button class="btn">Sign in</button>
+    <p class="error" id="loginError"></p>
+  </form>
+
+  <div id="app" hidden>
+    <div class="card"><div class="totals" id="totals"></div></div>
+    <div class="card goal">
+      <h2>Temple goal</h2>
+      <p>How many ordinances fill the temple on the TV. Lower it and the figures get bigger, so the temple looks fuller.
+        Raise it and they shrink to make room. Submissions are never changed.</p>
+      <form id="goalForm">
+        <input id="goal" type="number" inputmode="numeric" min="75" max="100000" aria-label="Goal">
+        <button class="btn" id="saveGoal">Save goal</button>
+        <span class="error" id="goalError" style="margin:0"></span>
+      </form>
+      <div class="meter"><div id="meter"></div></div>
+      <p class="status" id="goalStatus"></p>
+    </div>
+    <div class="card">
+      <div class="bar">
+        <h2 id="count">Submissions</h2>
+        <div>
+          <button class="btn light" id="refresh">Refresh</button>
+          <button class="btn light" id="csv">Download CSV</button>
+          <button class="btn light" id="logout">Sign out</button>
+        </div>
+      </div>
+      <div class="wrap"><table>
+        <thead><tr><th>When</th><th>Name</th><th class="n">Bap</th><th class="n">Init</th><th class="n">Endow</th><th class="n">Seal (couple)</th><th class="n">Seal (child)</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </div>
+  </div>
+</main>
+
+<script>
+(() => {
+  const TYPES = [
+    ['baptism', 'Baptisms', '#3fa0e8'], ['initiatory', 'Initiatories', '#e0a50f'], ['endowment', 'Endowments', '#45b86f'],
+    ['sealCouple', 'Sealings · couples', '#f05b7d'], ['sealChild', 'Sealings · children', '#9d6cf0'],
+  ];
+  const $ = id => document.getElementById(id);
+  let key = '';
+  try { key = sessionStorage.getItem('adminKey') || ''; } catch {}
+  let subs = [], goal = 300, all = 0;
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: { authorization: `Bearer ${key}` } });
+    if (res.status === 401) { signOut('Wrong admin key.'); throw new Error('unauthorized'); }
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`);
+    return res.json();
+  }
+
+  function signOut(msg = '') {
+    key = '';
+    try { sessionStorage.removeItem('adminKey'); } catch {}
+    $('app').hidden = true; $('login').hidden = false; $('loginError').textContent = msg;
+  }
+
+  async function load() {
+    [subs, { goal }] = await Promise.all([api('/api/admin/submissions'), api('/api/admin/goal')]);
+    $('goal').value = goal;
+    $('login').hidden = true; $('app').hidden = false;
+    const sum = Object.fromEntries(TYPES.map(([k]) => [k, subs.reduce((s, r) => s + r[k], 0)]));
+    all = Object.values(sum).reduce((a, b) => a + b, 0);
+    previewGoal();
+    $('totals').innerHTML = `<div class="total" style="--c:var(--ink)"><b>${all}</b><span>All ordinances</span></div>` +
+      TYPES.map(([k, label, c]) => `<div class="total" style="--c:${c}"><b>${sum[k]}</b><span>${label}</span></div>`).join('');
+    $('count').textContent = `${subs.length} submission${subs.length === 1 ? '' : 's'}`;
+    const rows = $('rows');
+    rows.replaceChildren();
+    if (!subs.length) rows.innerHTML = '<tr><td colspan="8" class="empty">Nothing yet.</td></tr>';
+    subs.forEach(s => {
+      const tr = document.createElement('tr');
+      const when = new Date(s.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      tr.innerHTML = `<td>${when}</td><td class="who"></td>${TYPES.map(([k]) => `<td class="n">${s[k] || ''}</td>`).join('')}
+        <td><button class="btn del">Delete</button></td>`;
+      const who = tr.querySelector('.who');
+      if (s.name) who.textContent = s.name; else who.innerHTML = '<span class="anon">no name</span>';
+      tr.querySelector('.del').onclick = () => remove(s);
+      rows.appendChild(tr);
+    });
+  }
+
+  async function remove(s) {
+    const what = TYPES.filter(([k]) => s[k]).map(([k, label]) => `${s[k]} ${label.toLowerCase()}`).join(', ');
+    if (!confirm(`Delete this submission${s.name ? ` from ${s.name}` : ''}?\n\n${what}\n\nThe TV will update right away. This can't be undone.`)) return;
+    try { await api(`/api/admin/submissions/${s.id}`, { method: 'DELETE' }); await load(); }
+    catch (e) { if (e.message !== 'unauthorized') alert(e.message); }
+  }
+
+  async function csv() {
+    try {
+      const res = await fetch('/api/admin/export.csv', { headers: { authorization: `Bearer ${key}` } });
+      if (res.status === 401) return signOut('Wrong admin key.');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = `temple-submissions-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    } catch (e) { alert(e.message); }
+  }
+
+  function previewGoal() {
+    const g = Math.max(75, parseInt($('goal').value, 10) || goal);
+    const pct = Math.round(100 * all / g);
+    $('meter').style.width = Math.min(100, pct) + '%';
+    const now = g === goal ? 'Right now' : `With a goal of ${g.toLocaleString()}`;
+    $('goalStatus').textContent = `${now} the temple is ${pct}% full (${all.toLocaleString()} of ${g.toLocaleString()}).` +
+      (pct >= 100 ? ' It shows as full, with the "We filled the temple!" banner.' : '');
+    $('saveGoal').disabled = g === goal;
+  }
+  $('goal').oninput = () => { $('goalError').textContent = ''; previewGoal(); };
+  $('goalForm').onsubmit = async e => {
+    e.preventDefault();
+    try {
+      ({ goal } = await api('/api/admin/goal', { method: 'PUT', body: JSON.stringify({ goal: parseInt($('goal').value, 10) }) }));
+      $('goal').value = goal;
+      previewGoal();
+    } catch (err) { if (err.message !== 'unauthorized') $('goalError').textContent = err.message; }
+  };
+
+  $('login').onsubmit = async e => {
+    e.preventDefault();
+    key = $('key').value.trim();
+    try { await load(); try { sessionStorage.setItem('adminKey', key); } catch {} }
+    catch (err) { if (err.message !== 'unauthorized') $('loginError').textContent = err.message; }
+  };
+  $('refresh').onclick = () => load().catch(() => {});
+  $('csv').onclick = csv;
+  $('logout').onclick = () => signOut();
+
+  if (key) load().catch(() => {}); else signOut();
+})();
+</script>
+</body>
+</html>

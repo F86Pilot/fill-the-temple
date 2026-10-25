@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fill the Temple</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --ink: #3b2a1a;
+    --kraft: #c8955c;
+    --kraft-dark: #a8743f;
+    --paint: #f6f1e6;
+    --tape: rgba(244, 228, 170, .82);
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #2a1d12; }
+  body { font-family: 'Fredoka', system-ui, sans-serif; color: var(--ink); cursor: none; }
+
+  /* Fixed 1920x1080 stage, scaled to fit whatever screen it's on */
+  #stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px;
+           transform-origin: center; overflow: hidden; }
+  #skyLayer, #scene, #sceneFront { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .deco { position: absolute; }
+  .deco > svg { position: absolute; left: 0; top: 0; overflow: visible; }
+  #pileCanvas { position: absolute; }
+
+  /* Paper/cardboard grain over everything. A normal blend, not multiply: looks the same on these light colors, but
+     multiply forced a slow graphics chip (Pi 4) to re-blend the whole screen on every frame of the decorations' motion. */
+  #grain { position: absolute; inset: 0; pointer-events: none; opacity: .5;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='320'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .55 0 0 0 0 .42 0 0 0 0 .28 0 0 0 .35 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+  /* Cardboard cards */
+  .card { position: absolute; background: var(--paint); border-radius: 16px;
+          box-shadow: 5px 6px 0 var(--kraft), 5px 6px 0 2px rgba(80,50,20,.25); }
+  .tape { position: absolute; width: 110px; height: 34px; background: var(--tape);
+          box-shadow: 0 1px 2px rgba(80,50,20,.2); }
+  .tape::before, .tape::after { content: ''; position: absolute; top: 0; bottom: 0; width: 6px;
+          background: repeating-linear-gradient(180deg, var(--tape) 0 4px, transparent 4px 7px); }
+  .tape::before { left: -6px; } .tape::after { right: -6px; }
+
+  .title { left: 70px; top: 46px; padding: 22px 40px 24px; background: var(--kraft);
+           box-shadow: 5px 6px 0 var(--kraft-dark), 5px 6px 0 2px rgba(80,50,20,.3); transform: rotate(-1.5deg); }
+  .title h1 { margin: 0; font-size: 84px; font-weight: 700; line-height: 1; color: #fff;
+              text-shadow: 4px 4px 0 #8a5a2b; letter-spacing: -1px; }
+  .title p { margin: 10px 0 0; font-size: 30px; color: #fff4dd; font-weight: 600; }
+
+  .week { left: 104px; top: 196px; padding: 10px 26px 12px; font-size: 32px; font-weight: 700; color: #fff;
+          text-shadow: 2px 2px 0 rgba(0,0,0,.18); transform: rotate(-2deg); border-radius: 12px; }
+  .intro { left: 84px; top: 288px; width: 560px; padding: 22px 32px 24px; transform: rotate(1deg);
+           font-size: 29px; font-weight: 600; line-height: 1.28; }
+  .intro b { color: #e0533d; font-weight: 700; }
+  .qr { left: 84px; top: 530px; display: flex; gap: 24px; align-items: center; padding: 16px 30px 16px 16px;
+        transform: rotate(-1deg); }
+  #qrcode { width: 172px; height: 172px; }
+  #qrcode img, #qrcode canvas { width: 172px !important; height: 172px !important; }
+  .qr .cta { font-size: 40px; font-weight: 700; line-height: 1.12; max-width: 330px; }
+
+  .legend { position: absolute; left: 50px; right: 50px; bottom: 22px; display: flex; gap: 22px; }
+  .chip { position: relative; flex: 1; display: flex; align-items: center; gap: 12px; background: var(--paint);
+          border-radius: 14px; padding: 8px 18px 8px 10px; box-shadow: 4px 5px 0 var(--kraft); border-top: 8px solid; }
+  .chip:nth-child(odd) { transform: rotate(-1deg); } .chip:nth-child(even) { transform: rotate(1deg); }
+  .chip svg { width: 64px; height: 64px; flex: none; }
+  .chip .name { font-size: 22px; font-weight: 600; line-height: 1.1; }
+  .chip .count { font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
+                 transition: transform .25s; display: inline-block; }
+  .chip .count.bump { transform: scale(1.25); }
+
+  #offline { right: 40px; top: 40px; padding: 10px 22px; font-size: 26px; font-weight: 700; color: #fff;
+             background: #8a6a4a; box-shadow: 4px 5px 0 rgba(80,50,20,.35); transform: rotate(1.5deg); display: none; }
+  #offline.show { display: block; }
+  #banner { left: 50%; top: -260px; transform: translateX(-50%) rotate(-2deg); padding: 26px 56px; text-align: center;
+            background: #e0533d; color: #fff; box-shadow: 6px 7px 0 #9c3424; transition: top .8s cubic-bezier(.3,1.5,.5,1); }
+  #banner.show { top: 40px; }
+  #banner h2 { margin: 0; font-size: 84px; line-height: 1; text-shadow: 4px 4px 0 #9c3424; }
+  #banner p { margin: 8px 0 0; font-size: 32px; font-weight: 600; }
+
+  @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-12px) } }
+  .bob { animation: bob 5s ease-in-out infinite; }
+  @keyframes sway { 0%,100% { transform: rotate(-2deg) } 50% { transform: rotate(2deg) } }
+  .sway { animation: sway 4s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .spin { animation: spin 40s linear infinite; transform-box: fill-box; transform-origin: center; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="skyLayer" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6cc0ea"/>
+        <stop offset="1" stop-color="#c4ebf7"/>
+      </linearGradient>
+      <!-- corrugated flutes, seen on cut cardboard edges -->
+      <pattern id="flutes" width="7" height="10" patternUnits="userSpaceOnUse">
+        <rect width="7" height="10" fill="#c99760"/>
+        <rect width="3" height="10" fill="#a8743f"/>
+      </pattern>
+      <pattern id="insideBox" width="22" height="22" patternUnits="userSpaceOnUse">
+        <rect width="22" height="22" fill="#efe0bf"/>
+        <rect width="11" height="22" fill="#e9d8b3"/>
+      </pattern>
+      <clipPath id="aboveSlot"><rect id="aboveSlotRect" x="0" y="-2000" width="1920" height="2390"/></clipPath>
+      <linearGradient id="innerShade" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6b4a26" stop-opacity=".3"/>
+        <stop offset=".35" stop-color="#2a1a0c" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+
+    <rect width="1920" height="1080" fill="url(#sky)"/>
+    <g id="skyBack"></g>
+  </svg>
+  <!-- the sun and clouds are lifted in here, between the sky and the hills -->
+  <svg id="scene" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+    <g id="backdrop"></g>
+    <g id="templeBack"></g>
+    <g id="pile"></g>
+  </svg>
+  <!-- Settled dolls are painted into this canvas instead of staying live SVG (see "baking" below).
+       It sits between the back and front halves of the scene, just like the pile. -->
+  <canvas id="pileCanvas"></canvas>
+  <svg id="sceneFront" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+    <g id="templeFront"></g>
+    <g id="foreground"></g>
+    <g id="runners"></g>
+    <g id="fx"></g>
+  </svg>
+
+  <div class="card title"><span class="tape" style="left:-30px;top:-10px;transform:rotate(-30deg)"></span>
+    <h1>Fill the Temple</h1>
+  </div>
+
+  <div class="card week" id="week"></div>
+
+  <div class="card intro"><span class="tape" style="right:-34px;top:-8px;transform:rotate(28deg)"></span>
+    <b>This Fall we are going to fill the temple with people!</b> Set a family goal, find names, and then join us as we complete and track as many temple ordinances as possible.
+  </div>
+
+  <div class="card qr"><span class="tape" style="left:40%;top:-18px;transform:rotate(-3deg)"></span>
+    <div id="qrcode"></div>
+    <div class="cta">Scan to add people to the temple!</div>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="card" id="banner"><h2>We filled the temple!</h2><p>Thank you, everyone. Keep them coming!</p></div>
+
+  <div class="card" id="offline">Reconnecting…</div>
+
+  <div id="grain"></div>
+</div>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const params = new URLSearchParams(location.search);
+  // Served by the Worker, the TV talks to the backend and the QR points at the phone form on the same site.
+  const LIVE = location.protocol.startsWith('http');
+  const FORM_URL = params.get('form') || (LIVE ? location.origin + '/' : 'https://example.com/report');
+  // Below 75 the figures hit their max size and can't reach the top, so that's the smallest goal.
+  const goalFor = g => Math.max(75, Math.floor(Number(g)) || 300);
+  const GOAL = goalFor(params.get('goal'));
+  // Tuned for a Raspberry Pi 4. Any motion inside the scene SVG costs it a full redraw, so between moments the scene
+  // holds still (the decorations move on their own compositor layers), idle waves are rare, and it animates at 30fps.
+
+  const TYPES = {
+    baptism:    { label: 'Baptisms',                    color: '#3fa0e8', kind: 'single' },
+    initiatory: { label: 'Initiatories',                color: '#f2b829', kind: 'single' },
+    endowment:  { label: 'Endowments',                  color: '#45b86f', kind: 'single' },
+    sealCouple: { label: 'Sealings · Couples',          color: '#f05b7d', kind: 'couple' },
+    sealChild:  { label: 'Sealings · Child to Parents', color: '#9d6cf0', kind: 'family' },
+  };
+  const ORDER = Object.keys(TYPES);
+  const counts = Object.fromEntries(ORDER.map(k => [k, 0]));
+  const total = () => ORDER.reduce((s, k) => s + counts[k], 0);
+
+  // ---------- Layout (stage coords) ----------
+  const SPRING = { x: 690, y: 872 };          // springboard plank top
+  const BODY = { x: 770, y: 400, w: 1060, h: 488, d: 28 };
+  const WIN = { x: 818, y: 446, w: 964, h: 426, r: 60 };   // see-through front window
+  const SLOT = { x: 960, y: 390 };           // coin slot on the roof
+  const TOWER_X = 1300;
+
+  // Each pile figure stands for PER_FIG ordinances, so huge goals still fit the window.
+  const PER_FIG = Math.ceil(GOAL / 360);
+  const SLOTS = Math.ceil(GOAL / PER_FIG);
+
+  // ---------- Stage scaling ----------
+  const stage = document.getElementById('stage');
+  function fit() {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    stage.style.transform = `translate(-50%,-50%) scale(${s})`;
+  }
+  addEventListener('resize', fit); fit();
+
+  // ---------- Helpers ----------
+  function el(tag, attrs = {}, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function shade(hex, amt) {
+    const n = parseInt(hex.slice(1), 16);
+    const f = c => Math.max(0, Math.min(255, Math.round(c + amt * 255)));
+    return '#' + [f(n >> 16), f((n >> 8) & 255), f(n & 255)].map(v => v.toString(16).padStart(2, '0')).join('');
+  }
+  const KRAFT = '#c8955c', KRAFT_D = '#a8743f', PAINT = '#f6f1e6', TAPE = 'rgba(244,228,170,.85)';
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // A cardboard cutout: kraft "edge" offset behind a painted face.
+  function piece(parent, make, dx = 3, dy = 4) {
+    const g = el('g', {}, parent);
+    const back = make(el('g', { transform: `translate(${dx} ${dy})` }, g));
+    back.setAttribute('fill', KRAFT); back.setAttribute('stroke', KRAFT_D);
+    make(g);
+    return g;
+  }
+  // A flat scenery board whose corrugated top edge shows.
+  function flat(parent, d, fill, lift = 9) {
+    el('path', { d, fill: 'url(#flutes)', transform: `translate(0 ${-lift})`, stroke: KRAFT_D, 'stroke-width': 2 }, parent);
+    el('path', { d, fill, stroke: shade(fill, -.12), 'stroke-width': 2 }, parent);
+  }
+  function tape(parent, x, y, w, h, rot) {
+    el('rect', { x: -w / 2, y: -h / 2, width: w, height: h, fill: TAPE, transform: `translate(${x} ${y}) rotate(${rot})` }, parent);
+  }
+  function stick(parent, x, y1, y2) {
+    el('rect', { x: x - 5, y: y1, width: 10, height: y2 - y1, rx: 3, fill: '#b98a55', stroke: '#8f6436', 'stroke-width': 2 }, parent);
+  }
+  // A painted cardboard box with a top and right side, drawn in faux 3D.
+  function box(parent, x, y, w, h, d, { front = PAINT, top = '#fffaf0', side = '#ddd2bd', noFront = false } = {}) {
+    const k = d * 0.7;
+    const line = { stroke: KRAFT, 'stroke-width': 3, 'stroke-linejoin': 'round' };
+    el('path', { d: `M${x} ${y} L${x + d} ${y - k} H${x + w + d} L${x + w} ${y} Z`, fill: top, ...line }, parent);
+    el('path', { d: `M${x + w} ${y} L${x + w + d} ${y - k} V${y + h - k} L${x + w} ${y + h} Z`, fill: side, ...line }, parent);
+    if (!noFront) el('rect', { x, y, width: w, height: h, fill: front, ...line }, parent);
+  }
+  const archD = (x, y, w, h) => `M${x} ${y + h} V${y + w / 2} A${w / 2} ${w / 2} 0 0 1 ${x + w} ${y + w / 2} V${y + h} Z`;
+
+  // ---------- Backdrop ----------
+  const back = document.getElementById('backdrop');
+  const skyBack = document.getElementById('skyBack');
+  // seam in the painted backdrop, taped together
+  el('line', { x1: 0, y1: 360, x2: 1920, y2: 372, stroke: '#5fb0d8', 'stroke-width': 2, opacity: .6 }, skyBack);
+  [180, 640, 1500].forEach((x, i) => tape(skyBack, x, 364 + i * 3, 46, 90, 4 - i * 4));
+
+  // sun on a stick
+  const SUN_X = 930;
+  const sun = el('g', { class: 'bob', style: 'animation-duration:7s' }, back);
+  stick(sun, SUN_X, 210, 760);
+  const rays = el('g', { class: 'spin' }, sun);
+  const sunFace = el('g', {}, sun);
+  for (let i = 0; i < 12; i++) {
+    const a = i * 30;
+    piece(rays, g => el('path', { d: 'M-14 -88 L0 -128 L14 -88 Z', fill: '#ffc93c', stroke: '#e0a020', 'stroke-width': 2,
+      transform: `translate(${SUN_X} 170) rotate(${a})` }, g), 3, 3);
+  }
+  piece(sunFace, g => el('circle', { cx: SUN_X, cy: 170, r: 78, fill: '#ffd84d', stroke: '#e0a020', 'stroke-width': 3 }, g), 5, 6);
+  el('circle', { cx: SUN_X - 25, cy: 160, r: 7, fill: '#5a3a1a' }, sunFace);
+  el('circle', { cx: SUN_X + 25, cy: 160, r: 7, fill: '#5a3a1a' }, sunFace);
+  el('path', { d: `M${SUN_X - 30} 190 Q${SUN_X} 214 ${SUN_X + 30} 190`, fill: 'none', stroke: '#5a3a1a', 'stroke-width': 6, 'stroke-linecap': 'round' }, sunFace);
+  el('circle', { cx: SUN_X - 42, cy: 186, r: 10, fill: '#ff9a6b', opacity: .6 }, sunFace);
+  el('circle', { cx: SUN_X + 42, cy: 186, r: 10, fill: '#ff9a6b', opacity: .6 }, sunFace);
+
+  function cloud(x, y, s, delay) {
+    const g = el('g', { class: 'bob', style: `animation-delay:${delay}s` }, back);
+    stick(g, x, y + 30 * s, y + 360);
+    const blobs = [[0, 0, 46], [-50, 14, 34], [52, 12, 38], [-22, -26, 34], [26, -28, 30]];
+    const draw = (parent, fill, stroke) => blobs.forEach(([bx, by, r]) =>
+      el('circle', { cx: x + bx * s, cy: y + by * s, r: r * s, fill, stroke, 'stroke-width': 2 }, parent));
+    const edge = el('g', { transform: 'translate(5 6)' }, g); draw(edge, KRAFT, KRAFT_D);
+    draw(g, '#ffffff', 'none');
+    tape(g, x + 40 * s, y + 20 * s, 40, 14, -20);
+    return g;
+  }
+  const clouds = [cloud(1540, 110, .85, 1.6), cloud(1790, 200, 1.0, 3.1)];
+
+  flat(back, 'M0 790 Q 200 690 430 760 Q 640 820 840 740 Q 1080 650 1320 740 Q 1560 820 1920 700 V1080 H0Z', '#9fd56f');
+  flat(back, 'M0 840 Q 260 780 520 830 Q 760 870 980 820 L1920 830 V1080 H0Z', '#84c95a');
+
+  function tree(parent, x, y, r, color, delay) {
+    const g = el('g', { class: 'sway', style: `animation-delay:${delay}s` }, parent);
+    stick(g, x, y - r, y + 4);
+    piece(g, gg => el('circle', { cx: x, cy: y - r * 1.6, r, fill: color, stroke: shade(color, -.15), 'stroke-width': 3 }, gg), 5, 6);
+    el('circle', { cx: x - r * .35, cy: y - r * 1.95, r: r * .22, fill: '#ffffff', opacity: .25 }, g);
+    return g;
+  }
+  const backTree = tree(back, 560, 850, 50, '#5cb85c', .6);
+
+  // ---------- Temple (back half: interior of the box) ----------
+  const tb = document.getElementById('templeBack');
+  const winPath = `M${WIN.x} ${WIN.y + WIN.h} V${WIN.y + WIN.r} Q${WIN.x} ${WIN.y} ${WIN.x + WIN.r} ${WIN.y} H${WIN.x + WIN.w - WIN.r} Q${WIN.x + WIN.w} ${WIN.y} ${WIN.x + WIN.w} ${WIN.y + WIN.r} V${WIN.y + WIN.h} Z`;
+  el('path', { d: winPath, fill: 'url(#insideBox)' }, tb);
+
+  // ---------- Temple (front half) ----------
+  const tf = document.getElementById('templeFront');
+  el('path', { d: winPath, fill: 'url(#innerShade)' }, tf);
+  // plastic window sheen
+  const sheen = el('g', { opacity: .22 }, tf);
+  el('path', { d: `M${WIN.x + 60} ${WIN.y + WIN.h} L${WIN.x + 220} ${WIN.y} H${WIN.x + 280} L${WIN.x + 120} ${WIN.y + WIN.h} Z`, fill: '#fff' }, sheen);
+  el('path', { d: `M${WIN.x + 330} ${WIN.y + WIN.h} L${WIN.x + 490} ${WIN.y} H${WIN.x + 515} L${WIN.x + 355} ${WIN.y + WIN.h} Z`, fill: '#fff' }, sheen);
+  el('path', { d: `M${WIN.x + 640} ${WIN.y + WIN.h} L${WIN.x + 820} ${WIN.y} H${WIN.x + 870} L${WIN.x + 690} ${WIN.y + WIN.h} Z`, fill: '#fff' }, sheen);
+  sheen.setAttribute('clip-path', 'url(#winClip)');
+  const clip = el('clipPath', { id: 'winClip' }, document.querySelector('defs'));
+  el('path', { d: winPath }, clip);
+
+  // main body: top + side faces, then the front face with the window cut out
+  box(tf, BODY.x, BODY.y, BODY.w, BODY.h, BODY.d, { noFront: true });
+  el('path', { d: `M${BODY.x} ${BODY.y} H${BODY.x + BODY.w} V${BODY.y + BODY.h} H${BODY.x} Z ${winPath}`, 'fill-rule': 'evenodd',
+    fill: PAINT, stroke: KRAFT, 'stroke-width': 3 }, tf);
+  el('path', { d: winPath, fill: 'none', stroke: KRAFT, 'stroke-width': 7 }, tf);          // cut edge of the window
+  el('path', { d: winPath, fill: 'none', stroke: '#e6b94a', 'stroke-width': 3, transform: 'translate(0 0)', opacity: .9 }, tf);
+  // base step and corner pilasters
+  el('rect', { x: BODY.x - 10, y: BODY.y + BODY.h - 14, width: BODY.w + 20, height: 18, rx: 4, fill: '#e9e0cc', stroke: KRAFT, 'stroke-width': 3 }, tf);
+  [BODY.x + 4, BODY.x + BODY.w - 18].forEach(x => el('rect', { x, y: BODY.y + 10, width: 14, height: BODY.h - 26, fill: '#efe7d6', stroke: KRAFT, 'stroke-width': 2 }, tf));
+  // coin slot on the roof
+  el('path', { d: `M${SLOT.x - 58} ${SLOT.y + 4} L${SLOT.x - 48} ${SLOT.y - 6} H${SLOT.x + 62} L${SLOT.x + 52} ${SLOT.y + 4} Z`, fill: '#3b2412', stroke: KRAFT, 'stroke-width': 3 }, tf);
+
+  // tower: three stacked boxes and a spire
+  const TX = TOWER_X;
+  box(tf, TX - 75, 290, 150, 112, 20);
+  box(tf, TX - 56, 222, 112, 70, 16);
+  box(tf, TX - 42, 170, 84, 54, 12);
+  piece(tf, g => el('path', { d: `M${TX - 34} 172 Q${TX - 8} 110 ${TX} 52 Q${TX + 8} 110 ${TX + 34} 172 Z`, fill: PAINT, stroke: KRAFT, 'stroke-width': 3 }, g), 6, -3);
+  el('path', { d: `M${TX} 52 Q${TX + 8} 110 ${TX + 34} 172 H${TX + 4} Z`, fill: '#ddd2bd' }, tf);
+  // gold-painted windows on the tower
+  const gold = { fill: '#f2c14e', stroke: '#c9922a', 'stroke-width': 2 };
+  el('path', { d: archD(TX - 14, 234, 28, 46), ...gold }, tf);
+  el('path', { d: archD(TX - 26, 180, 18, 36), ...gold }, tf);
+  el('path', { d: archD(TX + 8, 180, 18, 36), ...gold }, tf);
+  el('circle', { cx: TX, cy: 318, r: 20, ...gold }, tf);
+  [[-46, 22], [-13, 26], [24, 22]].forEach(([dx, w]) => el('path', { d: archD(TX + dx, 346, w, 48), ...gold }, tf));
+  // Angel Moroni, gold foil
+  const moroni = el('g', { class: 'bob', style: 'animation-duration:3s' }, tf);
+  piece(moroni, g => {
+    const gg = el('g', {}, g);
+    el('circle', { cx: TX, cy: 18, r: 8 }, gg);
+    el('path', { d: `M${TX - 9} 28 L${TX + 9} 28 L${TX + 14} 50 L${TX - 14} 50 Z` }, gg);
+    el('path', { d: `M${TX + 4} 28 L${TX + 34} 10 L${TX + 36} 18 L${TX + 6} 34 Z` }, gg);
+    gg.setAttribute('fill', '#f5c842'); gg.setAttribute('stroke', '#b8861f'); gg.setAttribute('stroke-width', 2);
+    return gg;
+  }, 2, 3);
+  tape(tf, BODY.x + 6, BODY.y + 8, 60, 18, -40);
+  tape(tf, BODY.x + BODY.w - 4, BODY.y + BODY.h - 30, 60, 18, -50);
+  tape(tf, TX - 66, 300, 46, 16, -35);
+
+  // ---------- Foreground: ground, walkway, springboard ----------
+  const fg = document.getElementById('foreground');
+  flat(fg, 'M0 884 Q 500 868 980 880 Q 1400 890 1920 874 V1080 H0Z', '#6cbf4e', 8);
+  el('path', { d: `M-10 902 Q 300 896 ${SPRING.x - 40} 904 L ${SPRING.x} 928 Q 320 932 -10 930 Z`, fill: '#e9c98f', stroke: '#c9a46a', 'stroke-width': 2 }, fg);
+  for (let x = 20; x < SPRING.x - 60; x += 70) el('rect', { x, y: 912, width: 30, height: 6, rx: 3, fill: '#d4ad6c' }, fg);
+  const bushes = [[1880, 884]].map(([x, y], i) => {
+    const g = el('g', { class: 'sway', style: `animation-delay:${i * .7}s` }, fg);
+    piece(g, gg => { const b = el('g', {}, gg);
+      [[-18, 0, 20], [4, -8, 24], [24, 2, 18]].forEach(([bx, by, r]) => el('circle', { cx: x + bx, cy: y + by, r }, b));
+      b.setAttribute('fill', '#4fae45'); return b; }, 3, 4);
+    return g;
+  });
+  // ---------- Decorations on their own layers ----------
+  // The sun, clouds, trees and Moroni move forever. Inside the big scene SVG, every frame of that motion made the
+  // browser re-process the whole scene, which used up a slow computer's entire budget. Lifted into their own small
+  // elements, their CSS animations run on the compositor (the graphics chip just moves a finished picture).
+  // Each layer is inserted where the piece sat in the stacking order: sun and clouds between the sky and the hills.
+  const stageEl = document.getElementById('stage');
+  function lift(g, into, before = null, ox = 0, oy = 0) {
+    const b = g.getBBox(), pad = 12;
+    const x = b.x - pad, y = b.y - pad, w = b.width + pad * 2, h = b.height + pad * 2;
+    const cls = g.getAttribute('class') || '';
+    // sway pivots at its base (like the old transform-origin 50% 100% on the fill box); everything else at its middle
+    const [cx, cy] = /sway/.test(cls) ? [b.x + b.width / 2, b.y + b.height] : [b.x + b.width / 2, b.y + b.height / 2];
+    const div = document.createElement('div');
+    div.className = `deco ${cls}`;
+    div.style.cssText = `left:${x - ox}px;top:${y - oy}px;width:${w}px;height:${h}px;` +
+      `transform-origin:${cx - x}px ${cy - y}px;${g.getAttribute('style') || ''}`;
+    g.removeAttribute('class'); g.removeAttribute('style');
+    const svg = el('svg', { viewBox: `${x} ${y} ${w} ${h}`, width: w, height: h }, div);
+    svg.appendChild(g);
+    into.insertBefore(div, before);
+    return { div, x, y };
+  }
+  const sceneEl = document.getElementById('scene'), frontEl = document.getElementById('sceneFront');
+  const sunL = lift(sun, stageEl, sceneEl);
+  lift(rays, sunL.div, null, sunL.x, sunL.y);             // spins inside the bobbing sun, above its stick...
+  lift(sunFace, sunL.div, null, sunL.x, sunL.y);          // ...and below its face
+  clouds.forEach(c => lift(c, stageEl, sceneEl));
+  lift(backTree, stageEl, frontEl);                       // in front of the hills; nothing in the temple overlaps it
+  lift(moroni, stageEl, frontEl.nextSibling);
+  bushes.forEach(b => lift(b, stageEl, frontEl.nextSibling));
+
+  // springboard
+  const springG = el('g', {}, fg);
+  box(springG, SPRING.x - 54, 906, 108, 22, 10, { front: '#d9a35f', top: '#e8b877', side: '#b9864f' });
+  const coil = el('path', { fill: 'none', stroke: '#8a8f99', 'stroke-width': 5, 'stroke-linejoin': 'round' }, springG);
+  const plank = el('g', {}, springG);
+  piece(plank, g => el('rect', { x: SPRING.x - 62, y: -8, width: 124, height: 14, rx: 6, fill: '#e0533d', stroke: '#9c3424', 'stroke-width': 2 }, g), 2, 4);
+  let springSquash = 0;
+  function drawSpring() {
+    const top = SPRING.y + springSquash * 18;
+    plank.setAttribute('transform', `translate(0 ${top})`);
+    const n = 5, h = 900 - top;
+    let d = `M${SPRING.x} ${top + 6}`;
+    for (let i = 1; i <= n; i++) d += ` L${SPRING.x + (i % 2 ? 20 : -20)} ${top + 6 + (h - 6) * i / (n + 1)}`;
+    d += ` L${SPRING.x} 902`;
+    coil.setAttribute('d', d);
+  }
+  drawSpring();
+
+  // ---------- Figures ----------
+  // A one-piece paper-doll cutout (origin at the feet). Each limb exists in three passes
+  // (paper edge, outline, fill) so the parts read as a single shape while still moving.
+  const SHOULDER = [15, -66], HIP = [10, -36];
+  function makePerson(parent, color, size = 1) {
+    const root = el('g', {}, parent);
+    const body = el('g', { transform: `scale(${size})` }, root);
+    const limbs = { aR: [], aL: [], lR: [], lL: [] };
+    const passes = [
+      { g: el('g', { transform: 'translate(3 4)' }, body), fill: shade(color, -.2), stroke: shade(color, -.2), sw: 5 },
+      { g: el('g', {}, body), fill: color, stroke: shade(color, -.25), sw: 5 },
+      { g: el('g', {}, body), fill: color, stroke: 'none', sw: 0 },
+    ];
+    passes.forEach(({ g, fill, stroke, sw }) => {
+      const st = { fill, stroke, 'stroke-width': sw };
+      const limb = (key, w, h) => {
+        const lg = el('g', {}, g);
+        el('rect', { x: -w / 2, y: -4, width: w, height: h, rx: w / 2, ...st }, lg);
+        limbs[key].push(lg);
+      };
+      limb('lR', 21, 40); limb('lL', 21, 40);
+      limb('aR', 18, 40); limb('aL', 18, 40);
+      el('rect', { x: -19, y: -76, width: 38, height: 48, rx: 15, ...st }, g);
+      el('circle', { cx: 0, cy: -92, r: 21, ...st }, g);
+    });
+    el('circle', { cx: -7, cy: -95, r: 2.8, fill: '#3b2412' }, body);
+    el('circle', { cx: 7, cy: -95, r: 2.8, fill: '#3b2412' }, body);
+    el('path', { d: 'M-7 -85 Q0 -79 7 -85', fill: 'none', stroke: '#3b2412', 'stroke-width': 2.2, 'stroke-linecap': 'round' }, body);
+    el('circle', { cx: -13, cy: -86, r: 3.5, fill: '#fff', opacity: .3 }, body);
+    el('circle', { cx: 13, cy: -86, r: 3.5, fill: '#fff', opacity: .3 }, body);
+    return { root, limbs };
+  }
+  // Angles in degrees; 0 = hanging straight down, negative swings toward the viewer's right.
+  function setPose(p, aR, aL, lR, lL) {
+    const set = (list, [x, y], a) => list.forEach(g => g.setAttribute('transform', `translate(${x} ${y}) rotate(${a})`));
+    set(p.limbs.aR, SHOULDER, aR); set(p.limbs.aL, [-SHOULDER[0], SHOULDER[1]], aL);
+    set(p.limbs.lR, HIP, lR); set(p.limbs.lL, [-HIP[0], HIP[1]], lL);
+  }
+  function posePerson(p, phase, tuck = 0) {         // running; tuck=1 is the mid-air flip pose
+    const s = Math.sin(phase) * (1 - tuck);
+    setPose(p, -60 + s * 30 - 90 * tuck, 60 + s * 30 + 90 * tuck, -12 + s * 28 + 12 * tuck, 12 + s * 28 - 12 * tuck);
+  }
+  function heart(parent, x, y, color) {
+    piece(parent, g => el('path', {
+      d: `M${x} ${y + 12} C${x - 18} ${y} ${x - 12} ${y - 14} ${x} ${y - 5} C${x + 12} ${y - 14} ${x + 18} ${y} ${x} ${y + 12} Z`,
+      fill: shade(color, 0.1), stroke: shade(color, -0.3), 'stroke-width': 2 }, g), 2, 3);
+  }
+  // A "unit" moves together: 1 person, a couple, or two parents with a child.
+  function buildUnit(parent, type, { hearts = true } = {}) {
+    const { color, kind } = TYPES[type];
+    const g = el('g', {}, parent);
+    const people = [];
+    if (kind === 'single') {
+      people.push({ p: makePerson(g, color), off: 0, rate: 1 });
+    } else if (kind === 'couple') {
+      people.push({ p: makePerson(g, shade(color, -0.06)), off: 0, rate: 1, x: -34 });
+      people.push({ p: makePerson(g, color), off: 0, rate: 1, x: 34 });
+      if (hearts) heart(g, 0, -140, color);
+    } else {
+      people.push({ p: makePerson(g, shade(color, -0.06)), off: 0, rate: 1, x: -52 });
+      people.push({ p: makePerson(g, shade(color, 0.12), 0.6), off: 1.3, rate: 1.4, x: 0 });
+      people.push({ p: makePerson(g, color), off: 0, rate: 1, x: 52 });
+      if (hearts) heart(g, 0, -140, color);
+    }
+    people.forEach(o => o.x && o.p.root.setAttribute('transform', `translate(${o.x} 0)`));
+    if (kind === 'family') g.appendChild(people[1].p.root);   // child drawn last, in front of both parents' hands
+    return { g, people };
+  }
+
+  // ---------- The waiting group ----------
+  // One of each type stands on the walkway. When a submission comes in, the matching member
+  // reacts, then runs for the springboard, and a replacement jogs in from the left.
+  const GROUP_SCALE = 1.05, GROUP_Y = 908;
+  const WAIT_X = { sealChild: 138, baptism: 262, sealCouple: 372, initiatory: 488, endowment: 590 };
+  const crowdLayer = el('g', {}, fg);
+  const waiting = {};
+  const IDLE = ['wave', 'hop', 'sway'];
+  const REACTIONS = {                              // [duration, pose/transform per frame]
+    jump:  [1.0, (o, t) => { poseCheer(o.p, t * 2); return { dy: Math.abs(Math.sin(t * Math.PI * 2)) * 55 }; }],
+    wave:  [1.1, (o, t) => { poseWave(o.p, t + o.off); return { dy: Math.abs(Math.sin(t * 8)) * 6 }; }],
+    twirl: [0.9, (o, t) => { poseCheer(o.p, t); return { sx: t < .8 ? Math.cos(t / .8 * Math.PI * 2) : 1, dy: Math.sin(Math.min(1, t / .8) * Math.PI) * 18 }; }],
+    yay:   [1.0, (o, t) => { const k = Math.sin(t * 18); setPose(o.p, -150 + k * 40, 60 + k * 40, -10, 10); return { dy: Math.abs(k) * 10 }; }],
+    dance: [1.1, (o, t) => { const k = Math.sin(t * 12); setPose(o.p, -140 + k * 20, 140 + k * 20, -10 + k * 14, 10 + k * 14); return { rot: k * 14, dy: Math.abs(k) * 6 }; }],
+  };
+  function newMember(type, walkIn) {
+    const u = buildUnit(crowdLayer, type);
+    u.people.forEach(o => poseStand(o.p));
+    const m = { u, type, x: walkIn ? -170 - rand(0, 40) : WAIT_X[type], state: walkIn ? 'in' : 'idle',
+      phase: rand(0, 6), idleTimer: rand(1.5, 6), act: null, t: 0 };
+    waiting[type] = m;
+    placeMember(m, 0, 0, 1);
+  }
+  function placeMember(m, dy, rot, sx) {
+    m.u.g.setAttribute('transform', `translate(${m.x} ${GROUP_Y - dy}) rotate(${rot}) scale(${GROUP_SCALE * sx} ${GROUP_SCALE})`);
+  }
+  function updateCrowd(dt) {
+    for (const type of ORDER) {
+      const m = waiting[type];
+      if (!m) continue;
+      m.t += dt;
+      if (m.state === 'in') {                      // jog in to the open spot
+        m.x = Math.min(WAIT_X[type], m.x + 320 * dt);
+        m.phase += dt * 11;
+        m.u.people.forEach(o => posePerson(o.p, m.phase * o.rate + o.off));
+        placeMember(m, Math.abs(Math.sin(m.phase)) * 6, 0, 1);
+        if (m.x >= WAIT_X[type]) { m.state = 'idle'; m.u.people.forEach(o => poseStand(o.p)); }
+        continue;
+      }
+      let dy = 0, rot = 0;
+      if (!m.act && (m.idleTimer -= dt) <= 0) m.act = { kind: IDLE[Math.floor(Math.random() * IDLE.length)], t: 0 };
+      if (!m.act) {                                // standing still: place once, then leave it alone
+        if (!m.still) { placeMember(m, 0, 0, 1); m.still = true; }
+        continue;
+      }
+      m.still = false;
+      if (m.act) {
+        const a = m.act; a.t += dt;
+        if (a.kind === 'wave') m.u.people.forEach((o, j) => j === m.u.people.length - 1 ? poseWave(o.p, a.t) : poseStand(o.p));
+        if (a.kind === 'hop') { dy += Math.sin(Math.min(1, a.t / .45) * Math.PI) * 20; m.u.people.forEach(o => poseCheer(o.p, a.t)); }
+        if (a.kind === 'sway') rot = Math.sin(a.t * 6) * 6;
+        if (a.t >= ({ wave: 1.4, hop: .45, sway: 1.2 })[a.kind]) {
+          m.act = null; m.idleTimer = rand(10, 25);
+          m.u.people.forEach(o => poseStand(o.p));
+        }
+      }
+      placeMember(m, dy, rot, 1);
+    }
+  }
+  ORDER.forEach(t => newMember(t, false));
+
+  // ---------- Legend ----------
+  const legend = document.getElementById('legend');
+  const countEls = {};
+  ORDER.forEach(type => {
+    const t = TYPES[type];
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.style.borderTopColor = t.color;
+    const svg = el('svg', { viewBox: t.kind === 'single' ? '-60 -122 124 128' : '-112 -160 228 168' });
+    buildUnit(svg, type).people.forEach(o => posePerson(o.p, 0.6 + o.off));
+    chip.appendChild(svg);
+    const txt = document.createElement('div');
+    txt.innerHTML = `<div class="count">0</div><div class="name">${t.label}</div>`;
+    chip.appendChild(txt);
+    legend.appendChild(chip);
+    countEls[type] = txt.querySelector('.count');
+  });
+  const fmt = n => n.toLocaleString();
+  function bump(node) { node.classList.remove('bump'); void node.offsetWidth; node.classList.add('bump'); setTimeout(() => node.classList.remove('bump'), 260); }
+  function renderCounts(type) {
+    if (type) { countEls[type].textContent = fmt(counts[type]); bump(countEls[type]); }
+    else ORDER.forEach(k => countEls[k].textContent = fmt(counts[k]));
+  }
+
+  // ---------- Weekly focus ----------
+  // Week 1 starts on ?start= (default Nov 1, 2026). ?week=N forces a week for previewing.
+  const START = new Date((params.get('start') || '2026-11-01') + 'T00:00:00');
+  const WEEKS = [
+    null,
+    { text: 'Week 1: Baptisms', bg: TYPES.baptism.color },
+    { text: 'Weeks 2 & 3: Initiatories & Endowments', bg: `linear-gradient(90deg, ${TYPES.initiatory.color}, ${TYPES.endowment.color})` },
+    null,
+    { text: 'Week 4: Sealings', bg: TYPES.sealCouple.color },
+  ];
+  WEEKS[3] = WEEKS[2];
+  function renderWeek() {
+    const n = params.get('week') ? Number(params.get('week')) : Math.floor((Date.now() - START) / 6048e5) + 1;
+    const w = WEEKS[Math.min(4, Math.max(1, n || 1))];
+    const tag = document.getElementById('week');
+    tag.textContent = w.text;
+    tag.style.background = w.bg;
+    tag.style.boxShadow = '4px 5px 0 rgba(80,50,20,.35)';
+  }
+  renderWeek();
+  setInterval(renderWeek, 36e5);
+
+  // ---------- QR ----------
+  new QRCode(document.getElementById('qrcode'), { text: FORM_URL, width: 420, height: 420, colorDark: '#3b2412', colorLight: '#f6f1e6', correctLevel: QRCode.CorrectLevel.M });
+
+  // ---------- The sleeve inside the temple ----------
+  // Paper dolls tumble into a thin clear sleeve like cookies into a jar. Resting spots are
+  // precomputed with a seeded "drop and settle" pass over a height map, so the jumble is the
+  // same on every reload and SLOTS dolls fill it right to the top.
+  const pileLayer = document.getElementById('pile');
+  const pileG = el('g', {}, pileLayer);
+  const PILE = { x: WIN.x + 10, w: WIN.w - 20, bottom: WIN.y + WIN.h - 2, top: WIN.y + 4 };
+  const DOLL = { w: 113, h: 115 };                 // arms out, at scale 1
+  function seeded(seed) {                           // mulberry32
+    return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  }
+  // Heights here are measured up from the sleeve floor; `squeeze` is how much the pile will be
+  // compressed afterwards, so face spacing is checked in final screen distance.
+  function settle(scale, squeeze) {
+    const R = seeded(1234), rr = (a, b) => a + R() * (b - a);
+    const COL = 4, n = Math.ceil(PILE.w / COL), hgt = new Float32Array(n);
+    const out = [];
+    const HEAD = 35 * scale;                         // doll middle -> head center
+    const faceBlocked = (hx, hh) => {                // would an older doll (drawn in front) cover this face?
+      let hits = 0;
+      for (const o of out) {
+        const dx = hx - o.hx, dy = (hh - o.hh) * squeeze, cx = hx - o.x0, cy = (hh - o.cyH) * squeeze;
+        if (dx * dx + dy * dy < (40 * scale) ** 2 || cx * cx + cy * cy < (46 * scale) ** 2) hits++;
+      }
+      return hits;
+    };
+    for (let i = 0; i < SLOTS; i++) {
+      const rot = (R() + R() - 1) * 35;              // upright-ish, always landing feet-first
+      const th = rot * Math.PI / 180, c = Math.cos(th), sn = Math.abs(Math.sin(th));
+      const w = (c * DOLL.w + sn * DOLL.h) * scale, h = (sn * DOLL.w + c * DOLL.h) * scale;
+      const ov = rr(.3, .42);
+      // try several spots: prefer ones that keep every face visible, then the lowest
+      let best = null;
+      for (let k = 0; k < 10; k++) {
+        const x = rr(w / 2, Math.max(w / 2 + 1, PILE.w - w / 2));
+        const i0 = Math.max(0, Math.floor((x - w / 2) / COL)), i1 = Math.min(n - 1, Math.ceil((x + w / 2) / COL));
+        let mx = 0, sum = 0; for (let j = i0; j <= i1; j++) { mx = Math.max(mx, hgt[j]); sum += hgt[j]; }
+        const base = .45 * mx + .55 * sum / (i1 - i0 + 1);
+        const cyH = base + (.5 - ov) * h;
+        const hits = faceBlocked(x + HEAD * Math.sin(th), cyH + HEAD * c);
+        if (!best || hits < best.hits || (hits === best.hits && base < best.base)) best = { x, base, i0, i1, cyH, hits };
+      }
+      for (let j = best.i0; j <= best.i1; j++) {
+        const dx = Math.abs((j * COL + COL / 2) - best.x) / (w / 2);
+        hgt[j] = Math.max(hgt[j], best.base + (1 - ov) * h * (1 - .4 * dx * dx));
+      }
+      out.push({ x0: best.x, x: PILE.x + best.x, cyH: best.cyH, hx: best.x + HEAD * Math.sin(th), hh: best.cyH + HEAD * c,
+        rot, pose: Math.floor(R() * 4) });
+    }
+    let mean = 0; for (let j = 0; j < n; j++) mean += hgt[j]; mean /= n;
+    return { out, mean };
+  }
+  const slots = (() => {
+    // size the dolls so the full sleeve is about 1.15 layers deep, then squeeze the pile
+    // vertically so exactly SLOTS dolls reach the top
+    const H = PILE.bottom - PILE.top;
+    const sc = Math.min(.9, Math.sqrt(1.0 * PILE.w * H / SLOTS / (.55 * DOLL.w * DOLL.h)));
+    const guess = Math.min(1, H * .96 / settle(sc, 1).mean);
+    const r = settle(sc, guess);
+    const squeeze = Math.min(1, H * .96 / r.mean);
+    return r.out.map(o => ({ ...o, s: sc, y: PILE.bottom - o.cyH * squeeze }));
+  })();
+
+  let pileCount = 0;
+  const drops = [], settled = [], waves = [];
+  let filled = false, idleWave = 0;
+
+  // ---------- Baking ----------
+  // Each doll is ~60 SVG shapes, and the browser re-processes every live shape whenever anything on screen
+  // moves, so a full sleeve (20k shapes) made older computers stutter. Once a doll has settled and finished
+  // waving, it's painted into a canvas instead. Only the newest LIVE_MAX dolls stay live (they do the idle
+  // waving). Newer dolls sit behind older ones, so the canvas is drawn above the live pile, and each batch is
+  // painted behind what's already there ('destination-over').
+  const LIVE_MAX = 4;
+  const pileCanvas = document.getElementById('pileCanvas');
+  const pileCtx = pileCanvas.getContext('2d');
+  Object.assign(pileCanvas.style, { left: WIN.x + 'px', top: WIN.y + 'px', width: WIN.w + 'px', height: WIN.h + 'px' });
+  function sizePileCanvas() {
+    // match screen pixels so baked dolls are as crisp as live ones (a hidden tab can report a 0x0 window)
+    const fit = Math.min(innerWidth / 1920, innerHeight / 1080) || 1;
+    const r = Math.min(2, (devicePixelRatio || 1) * fit);
+    const w = Math.round(WIN.w * r), h = Math.round(WIN.h * r);
+    if (w === pileCanvas.width && h === pileCanvas.height) return false;
+    pileCanvas.width = w; pileCanvas.height = h;       // this also clears it
+    return true;
+  }
+  sizePileCanvas();
+
+  // Canvas work runs one step at a time, so a resize repaint and a new batch can't interleave.
+  const bakedMarkup = [];                            // every baked doll, oldest first, for repainting after a resize
+  let bakeGen = 0, pending = 0, canvasWork = Promise.resolve();
+  function canvasStep(fn) {
+    pending++;
+    canvasWork = canvasWork.then(fn).catch(e => console.warn('Could not bake dolls; leaving them live', e)).finally(() => pending--);
+  }
+  async function render(markups) {                  // oldest-first markup -> image, with older dolls in front
+    const svg = `<svg xmlns="${NS}" width="${pileCanvas.width}" height="${pileCanvas.height}" ` +
+      `viewBox="${WIN.x} ${WIN.y} ${WIN.w} ${WIN.h}">${markups.slice().reverse().join('')}</svg>`;
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      return img;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function bake(units) {
+    canvasStep(async () => {
+      const gen = bakeGen;
+      const markups = units.map(u => u.g.outerHTML);
+      const img = await render(markups);
+      if (gen !== bakeGen) return;                   // the pile was reset while this was decoding
+      pileCtx.globalCompositeOperation = 'destination-over';
+      pileCtx.drawImage(img, 0, 0, pileCanvas.width, pileCanvas.height);
+      bakedMarkup.push(...markups);
+      units.forEach(u => { u.g.remove(); settled.splice(settled.indexOf(u), 1); });
+    });
+  }
+  function repaintBaked() {
+    canvasStep(async () => {
+      const gen = bakeGen;
+      if (!bakedMarkup.length) return;
+      const img = await render(bakedMarkup);
+      if (gen !== bakeGen) return;
+      pileCtx.globalCompositeOperation = 'source-over';
+      pileCtx.clearRect(0, 0, pileCanvas.width, pileCanvas.height);
+      pileCtx.drawImage(img, 0, 0, pileCanvas.width, pileCanvas.height);
+    });
+  }
+  let resizeTimer;
+  addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (sizePileCanvas()) repaintBaked(); }, 200);
+  });
+  // Bake the oldest live dolls, stopping at the first one still waving so the stacking order stays right.
+  function maybeBake() {
+    if (pending || settled.length <= LIVE_MAX) return;
+    const batch = [];
+    for (const u of settled.slice(0, settled.length - LIVE_MAX)) {
+      if (waves.some(w => w.u === u)) break;
+      batch.push(u);
+    }
+    if (batch.length) bake(batch);
+  }
+  function clearBaked() {
+    bakeGen++;
+    bakedMarkup.length = 0;
+    pileCtx.globalCompositeOperation = 'source-over';
+    pileCtx.clearRect(0, 0, pileCanvas.width, pileCanvas.height);
+  }
+
+  function poseStand(p) { setPose(p, -65, 65, -10, 10); }       // arms out, like a paper-doll chain
+  // resting poses for the jumble in the sleeve
+  const RESTING = [[-65, 65, -10, 10], [-150, 60, -14, 8], [-50, 140, -6, 18], [-120, 120, -18, 18]];
+  function poseRest(p, i) { setPose(p, ...RESTING[i]); }
+  function poseWave(p, t) { setPose(p, -150 + Math.sin(t * 12) * 25, 65, -10, 10); }
+  function poseCheer(p, t) {                      // both arms up: "wheee!"
+    const w = Math.sin(t * 16) * 12;
+    setPose(p, -150 + w, 150 - w, -10 - w / 2, 10 + w / 2);
+  }
+  function startWave(u, dur) {
+    if (waves.some(w => w.u === u)) return;
+    waves.push({ u, t: rand(0, 1), dur });
+  }
+
+  // In the sleeve every ordinance is one doll in its type's color.
+  function addToPile(type, animate, idx) {
+    const s = slots[idx];
+    // newer dolls tuck in behind older ones; they land higher, so their faces stay clear
+    const g = el('g');
+    pileG.insertBefore(g, pileG.firstChild);
+    // sealings stay together: couples hold hands, families keep the child between the parents.
+    // Groups stand straighter and a bit smaller so they fit in the jumble.
+    const kind = TYPES[type].kind, group = kind !== 'single';
+    const unit = buildUnit(g, type, { hearts: false });
+    const u = { g, pose: group ? 0 : s.pose, people: unit.people };
+    u.people.forEach(o => poseRest(o.p, u.pose));
+    const k = group ? .8 : 1, rot = group ? s.rot * .4 : s.rot;
+    const half = ({ single: 57, couple: 91, family: 109 })[kind] * s.s * k;
+    const x = Math.min(PILE.x + PILE.w - half, Math.max(PILE.x + half, s.x));
+    // the doll's origin is its feet; shift so (x, y) is its middle
+    const at = (x, y, rot) => `translate(${x} ${y}) rotate(${rot}) scale(${s.s * k}) translate(0 57)`;
+    u.at = at;
+    u.x = x; u.rot = rot;
+    if (!animate) {
+      g.setAttribute('transform', at(x, s.y, rot));
+      settled.push(u);
+      return;
+    }
+    // tumble in from the top of the sleeve, drifting toward its spot
+    const fromX = SLOT.x + rand(-20, 20), fromY = WIN.y - 50;
+    const spin = rot + (Math.random() < .5 ? -1 : 1) * rand(25, 60);
+    g.setAttribute('transform', at(fromX, fromY, spin));
+    drops.push({ u, s, t: 0, dur: .45 + (s.y - fromY) / 650, fromX, fromY, spin });
+  }
+  function syncPile(type, animate) {
+    const want = Math.min(SLOTS, Math.floor(total() / PER_FIG));
+    for (let i = 0; pileCount < want; i++) {
+      const idx = pileCount++;
+      if (animate) setTimeout(() => addToPile(type, true, idx), i * 160); else addToPile(type, false, idx);
+    }
+  }
+
+  // ---------- Runners ----------
+  const runnersLayer = document.getElementById('runners');
+  const fxLayer = document.getElementById('fx');
+  const runners = [], particles = [], queue = [];
+  let releaseTimer = 0;
+
+  const STAR = 'M0 -10 L2.9 -3.1 L10 -3.1 L4.3 1.2 L6.2 8.1 L0 4 L-6.2 8.1 L-4.3 1.2 L-10 -3.1 L-2.9 -3.1 Z';
+  // Gentle twinkling stars. With gravity on, they're celebration confetti.
+  function sparkle(x, y, colors, n, { spread = 2.6, speed = [60, 160], gravity = 0, size = [1, 1.8] } = {}) {
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (Math.random() - .5) * spread;
+      const sp = rand(...speed);
+      const node = el('path', { d: STAR, fill: colors[i % colors.length], stroke: '#c9922a', 'stroke-width': 1 }, fxLayer);
+      particles.push({ n: node, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, rot: rand(0, 360), vr: rand(-120, 120),
+        s: rand(...size), life: rand(.9, 1.4), gravity });
+    }
+  }
+
+  function arrive(r) {
+    counts[r.type] += r.weight;
+    renderCounts(r.type);
+    sparkle(SLOT.x, SLOT.y - 20, ['#ffd84d', '#fff6c8'], 6);
+    syncPile(r.type, true);
+    if (!filled && total() >= GOAL) celebrate();
+  }
+
+  // The banner covers the title, so it drops in for a while and then tucks back up.
+  function showBanner() {
+    const b = document.getElementById('banner');
+    b.classList.add('show');
+    setTimeout(() => b.classList.remove('show'), 12000);
+  }
+  function celebrate() {
+    filled = true;
+    showBanner();
+    const colors = ORDER.map(k => TYPES[k].color).concat(['#ffd84d']);
+    for (let i = 0; i < 6; i++) setTimeout(() => sparkle(rand(200, 1720), 1100, colors, 26, { spread: 1, speed: [800, 1150], gravity: 700, size: [1.4, 2.6] }), i * 350);
+    settled.forEach(u => startWave(u, rand(3, 6)));
+  }
+
+  // The leader of each batch is the waiting member, who reacts first. Everyone else in the
+  // batch streams in from off the left edge, already running.
+  function launch({ type, leader }) {
+    const m = waiting[type];
+    const base = { type, weight: 1, speed: rand(260, 330), phase: rand(0, 6), t: 0,
+      arc: rand(250, 350), flight: rand(1, 1.2) };
+    const wrap = el('g', {}, runnersLayer);
+    if (leader && m?.state === 'idle') {
+      wrap.appendChild(m.u.g);
+      const kinds = Object.keys(REACTIONS);
+      runners.push({ ...m.u, ...base, wrap, x: m.x, y: GROUP_Y, scale: GROUP_SCALE,
+        state: 'react', react: kinds[Math.floor(Math.random() * kinds.length)] });
+      waiting[type] = null;                        // the spot stays open until they've run off
+    } else {
+      runners.push({ ...buildUnit(wrap, type), ...base, wrap, x: -140 - rand(0, 40), y: GROUP_Y + rand(-6, 6),
+        scale: GROUP_SCALE, state: 'run' });
+    }
+  }
+
+  // Public API: submit({ baptism: 3, sealCouple: 1, ... }). Every ordinance gets its own figure:
+  // all the leaders go first, then the rest stream in with the types interleaved.
+  function submit(entry) {
+    const left = {};
+    ORDER.forEach(type => {
+      const n = Math.max(0, Math.floor(entry[type] || 0));
+      if (!n) return;
+      queue.push({ type, leader: true });
+      left[type] = n - 1;
+    });
+    for (let more = true; more; ) {
+      more = false;
+      ORDER.forEach(type => { if (left[type] > 0) { queue.push({ type, leader: false }); left[type]--; more = true; } });
+    }
+  }
+  // Load totals without animation (e.g. from the server on page load).
+  function setCounts(c) {
+    ORDER.forEach(k => counts[k] = Math.max(0, Math.floor(c[k] || 0)));
+    pileG.replaceChildren(); settled.length = 0; waves.length = 0; drops.length = 0; pileCount = 0;
+    clearBaked();
+    const want = Math.min(SLOTS, Math.floor(total() / PER_FIG));
+    const bag = [];
+    ORDER.forEach(k => { for (let i = 0; i < Math.round(want * counts[k] / (total() || 1)); i++) bag.push(k); });
+    while (bag.length < want) bag.push(ORDER[0]);
+    for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+    bag.slice(0, want).forEach(k => addToPile(k, false, pileCount++));
+    maybeBake();
+    renderCounts();
+    if (total() >= GOAL && !filled) { filled = true; showBanner(); }
+  }
+
+  // ---------- Animation loop ----------
+  let last = performance.now(), bakeTimer = 0, frameNo = 0;
+  // One at a time. Measured on a Pi 4, a family of 10 runs at ~53fps and is in after ~45s (two at a time: ~47fps, 25s).
+  const MAX_RUNNERS = 1;
+  function tick(now) {
+    // Update every other frame: on a Pi, a steady 30fps looks better than a stuttering 60.
+    if (frameNo++ & 1) { requestAnimationFrame(tick); return; }
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+
+    releaseTimer -= dt;
+    // wait for that type's member to be back in line before sending the next one
+    // Leaders go a beat apart so each reaction gets noticed; followers speed up as the queue grows.
+    // At most MAX_RUNNERS on screen: every moving doll has to be redrawn each frame, which is what slows older computers.
+    if (queue.length && releaseTimer <= 0 && runners.length < MAX_RUNNERS) {
+      const item = queue.shift();
+      launch(item);
+      releaseTimer = item.leader ? 0.35 : Math.max(0.1, 0.32 - queue.length * 0.005);
+    }
+    updateCrowd(dt);
+
+    if (springSquash > 0) { springSquash = Math.max(0, springSquash - dt * 5); drawSpring(); }
+
+    for (let i = runners.length - 1; i >= 0; i--) {
+      const r = runners[i];
+      if (r.state === 'react') {               // a little "it's my turn!" moment
+        r.t += dt;
+        const [dur, fn] = REACTIONS[r.react];
+        let dy = 0, rot = 0, sx = 1;
+        r.people.forEach(o => { const f = fn(o, r.t) || {}; dy = f.dy ?? dy; rot = f.rot ?? rot; sx = f.sx ?? sx; });
+        r.g.setAttribute('transform', `translate(${r.x} ${r.y - dy}) rotate(${rot}) scale(${r.scale * sx} ${r.scale})`);
+        if (r.t >= dur) { r.state = 'run'; setTimeout(() => newMember(r.type, true), 700); }
+      } else if (r.state === 'run') {
+        r.x += r.speed * dt;
+        r.phase += dt * 11;
+        r.people.forEach(o => posePerson(o.p, r.phase * o.rate + o.off));
+        const bob = Math.abs(Math.sin(r.phase)) * 7;
+        r.g.setAttribute('transform', `translate(${r.x} ${r.y - bob}) scale(${r.scale}) rotate(${Math.sin(r.phase) * 3})`);
+        if (r.x >= SPRING.x - 40) { r.state = 'hop'; r.t = 0; r.fx = r.x; r.fy = r.y; }
+      } else if (r.state === 'hop') {          // little hop onto the springboard
+        r.t += dt / 0.25;
+        const k = Math.min(1, r.t);
+        const x = r.fx + (SPRING.x - r.fx) * k, y = r.fy + (SPRING.y - r.fy) * k - Math.sin(Math.PI * k) * 40;
+        r.people.forEach(o => posePerson(o.p, 0.4, k * .5));
+        r.g.setAttribute('transform', `translate(${x} ${y}) scale(${r.scale})`);
+        if (k >= 1) { r.state = 'fly'; r.t = 0; springSquash = 1; }
+      } else if (r.state === 'fly') {          // BOING: one flip on the way up, then upright over the slot
+        r.t += dt / r.flight;
+        const k = Math.min(1, r.t);
+        const x = SPRING.x + (SLOT.x - SPRING.x) * k;
+        const y = SPRING.y + (SLOT.y - SPRING.y) * k - 4 * r.arc * k * (1 - k);
+        const s = r.scale * (1 - .4 * k);
+        const f = Math.min(1, k / .55), rot = 360 * (f < .5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
+        r.people.forEach(o => k < .55 ? posePerson(o.p, 0.4, 1) : poseCheer(o.p, now / 1000 + o.off));
+        r.g.setAttribute('transform', `translate(${x} ${y}) scale(${s}) rotate(${rot})`);
+        if (k >= 1) { r.state = 'in'; r.t = 0; r.wrap.setAttribute('clip-path', 'url(#aboveSlot)'); }
+      } else {                                 // drop feet-first down through the slot
+        r.t += dt / 0.4;
+        const k = Math.min(1, r.t);
+        const s = r.scale * .6;
+        r.people.forEach(o => poseCheer(o.p, now / 1000 + o.off));
+        r.g.setAttribute('transform', `translate(${SLOT.x} ${SLOT.y + k * k * 150 * s}) scale(${s})`);
+        if (k >= 1) { r.wrap.remove(); runners.splice(i, 1); arrive(r); }
+      }
+    }
+
+    for (let i = drops.length - 1; i >= 0; i--) {   // tumble down the sleeve, settle, wave
+      const d = drops[i];
+      d.t += dt / d.dur;
+      const k = Math.min(1, d.t);
+      const e = 1 - Math.pow(1 - k, 3);
+      const x = d.fromX + (d.u.x - d.fromX) * e;
+      const y = d.fromY + (d.s.y - d.fromY) * k * k;
+      d.u.g.setAttribute('transform', d.u.at(x, y, d.spin + (d.u.rot - d.spin) * e));
+      if (k >= 1) {
+        drops.splice(i, 1);
+        settled.push(d.u);
+        waves.push({ u: d.u, t: 0, dur: 2.2 });
+      }
+    }
+
+    bakeTimer -= dt;
+    if (bakeTimer <= 0) { maybeBake(); bakeTimer = .5; }
+
+    // new arrivals wave; plus random waves from the crowd
+    idleWave -= dt;
+    if (idleWave <= 0 && settled.length) { startWave(settled[Math.floor(Math.random() * settled.length)], rand(1.5, 2.5)); idleWave = rand(6, 14); }
+    for (let i = waves.length - 1; i >= 0; i--) {
+      const w = waves[i];
+      w.t += dt;
+      w.u.people.forEach((o, j) => poseWave(o.p, w.t + j * .4));
+      if (w.t >= w.dur) { w.u.people.forEach(o => poseRest(o.p, w.u.pose)); waves.splice(i, 1); }
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.text) { p.n.setAttribute('x', p.x); p.n.setAttribute('y', p.y); }
+      else { p.vy += p.gravity * dt; p.vx *= .99; p.rot += p.vr * dt; p.n.setAttribute('transform', `translate(${p.x} ${p.y}) rotate(${p.rot}) scale(${p.s})`); }
+      p.n.setAttribute('opacity', Math.max(0, Math.min(1, p.life)));
+      if (p.life <= 0 || p.y > 1150) { p.n.remove(); particles.splice(i, 1); }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+  renderCounts();
+
+  window.templeChallenge = { submit, setCounts, counts };
+
+  // ---------- Live updates ----------
+  // The server sends running totals on connect and with every change. The TV animates new submissions
+  // and only redraws the pile when it has drifted (a deleted submission, or ones missed while offline).
+  function inFlight() {
+    const n = Object.fromEntries(ORDER.map(k => [k, 0]));
+    queue.forEach(q => n[q.type]++);
+    runners.forEach(r => n[r.type] += r.weight);
+    return n;
+  }
+  function reconcile(totals) {
+    const pending = inFlight();
+    const want = Object.fromEntries(ORDER.map(k => [k, Math.max(0, (totals[k] || 0) - pending[k])]));
+    if (ORDER.some(k => want[k] !== counts[k])) setCounts(want);
+  }
+  // If the connection stays down (wifi out, splash page back), say so rather than look frozen.
+  let offlineTimer = null;
+  const showOffline = on => document.getElementById('offline').classList.toggle('show', on);
+  function connect() {
+    const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/api/live');
+    let alive = true;
+    ws.onopen = () => { clearTimeout(offlineTimer); offlineTimer = null; showOffline(false); };
+    const ping = setInterval(() => {                 // lobby wifi can drop silently; reconnect if pings stop coming back
+      if (!alive) return ws.close();
+      alive = false;
+      try { ws.send('ping'); } catch {}
+    }, 20000);
+    ws.onmessage = e => {
+      if (e.data === 'pong') { alive = true; return; }
+      const msg = JSON.parse(e.data);
+      // The pile is laid out for one goal when the page loads, so a new goal from the admin page means a quick reload.
+      if (msg.goal && goalFor(msg.goal) !== GOAL) {
+        params.set('goal', goalFor(msg.goal));
+        return location.replace('?' + params);
+      }
+      if (msg.type === 'submit') submit(msg.counts);
+      reconcile(msg.totals);
+    };
+    ws.onclose = () => {
+      clearInterval(ping);
+      offlineTimer ??= setTimeout(() => showOffline(true), 30000);
+      setTimeout(connect, 3000 + Math.random() * 2000);
+    };
+  }
+  if (LIVE) connect();
+
+  // ---------- Demo mode ----------
+  // Keys 1-5 send one of each type, 0 a random submission, 9 a big batch (local only, nothing is saved).
+  // Auto-demo runs when the file is opened directly; ?demo=1 turns it on, ?demo=0 off.
+  addEventListener('keydown', e => {
+    const i = Number(e.key);
+    if (i >= 1 && i <= 5) submit({ [ORDER[i - 1]]: 1 });
+    if (e.key === '0') randomSubmit();
+    if (e.key === '9') for (let j = 0; j < 8; j++) randomSubmit();
+  });
+  function randomSubmit() {
+    const entry = {};
+    const picks = 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < picks; i++) {
+      const type = ORDER[Math.floor(Math.random() * ORDER.length)];
+      entry[type] = (entry[type] || 0) + (Math.random() < .15 ? 6 + Math.floor(Math.random() * 20) : 1 + Math.floor(Math.random() * 3));
+    }
+    submit(entry);
+  }
+  if ((params.get('demo') ?? (LIVE ? '0' : '1')) !== '0') {
+    const loop = () => { randomSubmit(); setTimeout(loop, 5000 + Math.random() * 5000); };
+    setTimeout(loop, 800);
+  }
+})();
+</script>
+</body>
+</html>
