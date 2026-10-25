@@ -41,10 +41,19 @@
   .goal h2 { margin: 0 0 4px; font-size: 20px; }
   .goal p { margin: 0 0 12px; color: var(--muted); }
   .goal form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .goal input { width: 110px; padding: 9px 10px; border: 2px solid var(--line); border-radius: 10px; font-size: 18px; font-weight: 600; }
+  .goal input[type=number] { width: 110px; padding: 9px 10px; border: 2px solid var(--line); border-radius: 10px; font-size: 18px; font-weight: 600; }
   .meter { height: 14px; border-radius: 7px; background: #e9dfcf; overflow: hidden; margin-top: 12px; }
   .meter div { height: 100%; background: linear-gradient(90deg, #3fa0e8, #45b86f, #f2b829, #f05b7d, #9d6cf0); transition: width .3s; }
   .goal .status { margin: 8px 0 0; color: var(--ink); font-weight: 500; }
+  .goal select { padding: 8px 10px; border: 2px solid var(--line); border-radius: 10px; font-size: 18px; font-weight: 600;
+                 background: #fff; color: var(--ink); font-family: inherit; }
+  .types { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; }
+  .types label { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 2px solid var(--line);
+                 border-radius: 999px; background: #fff; cursor: pointer; font-weight: 500; }
+  .types label:has(input:checked) { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, #fff); }
+  .types input { accent-color: var(--c); margin: 0; }
+  .tag { display: inline-block; padding: 4px 14px; border-radius: 8px; color: #fff; font-weight: 700;
+         text-shadow: 1px 1px 0 rgba(0,0,0,.18); }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -73,6 +82,17 @@
       <div class="meter"><div id="meter"></div></div>
       <p class="status" id="goalStatus"></p>
     </div>
+    <div class="card goal">
+      <h2>Weekly focus</h2>
+      <p>The tag under the title on the TV. Pick the week, and the ordinances to focus on that week.</p>
+      <form id="focusForm">
+        <label>Week <select id="week" aria-label="Week"></select></label>
+        <div class="types" id="focusTypes"></div>
+        <button class="btn" id="saveFocus">Save focus</button>
+        <span class="error" id="focusError" style="margin:0"></span>
+      </form>
+      <p class="status">On the TV: <span class="tag" id="focusPreview"></span></p>
+    </div>
     <div class="card">
       <div class="bar">
         <h2 id="count">Submissions</h2>
@@ -99,7 +119,7 @@
   const $ = id => document.getElementById(id);
   let key = '';
   try { key = sessionStorage.getItem('adminKey') || ''; } catch {}
-  let subs = [], goal = 300, all = 0;
+  let subs = [], goal = 300, all = 0, focus = { week: 1, types: ['baptism'] };
 
   async function api(path, opts = {}) {
     const res = await fetch(path, { ...opts, headers: { authorization: `Bearer ${key}` } });
@@ -115,8 +135,9 @@
   }
 
   async function load() {
-    [subs, { goal }] = await Promise.all([api('/api/admin/submissions'), api('/api/admin/goal')]);
+    [subs, { goal }, focus] = await Promise.all([api('/api/admin/submissions'), api('/api/admin/goal'), api('/api/admin/focus')]);
     $('goal').value = goal;
+    showFocus();
     $('login').hidden = true; $('app').hidden = false;
     const sum = Object.fromEntries(TYPES.map(([k]) => [k, subs.reduce((s, r) => s + r[k], 0)]));
     all = Object.values(sum).reduce((a, b) => a + b, 0);
@@ -174,6 +195,40 @@
       $('goal').value = goal;
       previewGoal();
     } catch (err) { if (err.message !== 'unauthorized') $('goalError').textContent = err.message; }
+  };
+
+  // Weekly focus: same wording and colors as the TV's tag
+  const FOCUS_NAMES = { baptism: 'Baptisms', initiatory: 'Initiatories', endowment: 'Endowments', sealCouple: 'Couple Sealings', sealChild: 'Child Sealings' };
+  for (let w = 1; w <= 12; w++) $('week').add(new Option(w, w));
+  TYPES.forEach(([k, label, c]) => {
+    const l = document.createElement('label');
+    l.style.setProperty('--c', c);
+    l.innerHTML = `<input type="checkbox" value="${k}"> ${label}`;
+    $('focusTypes').appendChild(l);
+  });
+  const picked = () => ({ week: Number($('week').value), types: [...$('focusTypes').querySelectorAll('input:checked')].map(i => i.value) });
+  function focusLabel({ week, types }) {
+    const both = types.includes('sealCouple') && types.includes('sealChild');
+    const names = types.filter(t => !(both && t === 'sealChild')).map(t => both && t === 'sealCouple' ? 'Sealings' : FOCUS_NAMES[t]);
+    return `Week ${week}: ` + (names.length > 1 ? names.slice(0, -1).join(', ') + ' & ' + names.at(-1) : names[0] || '…');
+  }
+  function previewFocus() {
+    const f = picked(), colors = TYPES.filter(([k]) => f.types.includes(k)).map(([, , c]) => c);
+    $('focusPreview').textContent = focusLabel(f);
+    $('focusPreview').style.background = colors.length > 1 ? `linear-gradient(90deg, ${colors.join(', ')})` : colors[0] || 'var(--muted)';
+    $('saveFocus').disabled = !f.types.length || JSON.stringify(f) === JSON.stringify(focus);
+    $('focusError').textContent = '';
+  }
+  function showFocus() {
+    $('week').value = focus.week;
+    $('focusTypes').querySelectorAll('input').forEach(i => i.checked = focus.types.includes(i.value));
+    previewFocus();
+  }
+  $('focusForm').onchange = previewFocus;
+  $('focusForm').onsubmit = async e => {
+    e.preventDefault();
+    try { focus = await api('/api/admin/focus', { method: 'PUT', body: JSON.stringify(picked()) }); showFocus(); }
+    catch (err) { if (err.message !== 'unauthorized') $('focusError').textContent = err.message; }
   };
 
   $('login').onsubmit = async e => {

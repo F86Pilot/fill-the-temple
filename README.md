@@ -17,7 +17,7 @@ One Cloudflare Worker serves everything from one address, on Cloudflare's free p
 | --- | --- |
 | `/` | Phone form people reach by scanning the QR code ([public/index.html](public/index.html)) |
 | `/tv` | Lobby display ([public/tv.html](public/tv.html)) |
-| `/admin` | Organizer page: every submission with names, delete mistakes, download CSV, set the goal ([public/admin.html](public/admin.html)) |
+| `/admin` | Organizer page: every submission with names, delete mistakes, download CSV, set the goal and the weekly focus ([public/admin.html](public/admin.html)) |
 
 [src/worker.js](src/worker.js) stores submissions in a SQLite-backed Durable Object. The TV holds a WebSocket to it:
 each new report arrives as an animation, and a deletion makes the TV redraw from the new totals. Names are optional,
@@ -40,8 +40,8 @@ maximum size.
 4. `npm run deploy`. It prints your site's address, like `https://fill-the-temple.<your-subdomain>.workers.dev`.
 5. Open `<your site>/tv` on the lobby computer. The QR code points at your site automatically.
 
-Before launch, set the goal on `/admin`, and check the weekly focus dates (the `start` option below) and the intro
-text in [public/tv.html](public/tv.html).
+Before launch, set the goal and the weekly focus on `/admin` (the week number and which ordinances that week
+highlights; the TV's tag updates live), and check the intro text in [public/tv.html](public/tv.html).
 
 ## Running locally
 
@@ -59,8 +59,6 @@ containing `ADMIN_KEY=local-dev-key` for the local admin page. Local data lives 
 | --- | --- | --- |
 | `goal` | `300` | Ordinances needed to fill the temple. When served, the goal set on the admin page wins |
 | `form` | the site's own `/` | URL the QR code points to |
-| `start` | `2026-11-01` | Date week 1 begins (drives the weekly focus tag) |
-| `week` | none | Force a week (1–4) for previewing |
 | `demo` | off when served, on when opened as a file | `?demo=1` adds random local-only submissions |
 
 Demo keys (local only, nothing is saved): `1`–`5` send one of each type, `0` a random submission, `9` a big batch.

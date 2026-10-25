@@ -41,6 +41,14 @@ export default {
         if (!Number.isInteger(goal) || goal < MIN_GOAL || goal > 100000) return json({ error: `The goal has to be a whole number from ${MIN_GOAL} to 100,000.` }, 400);
         return json({ goal: await temple.setGoal(goal) });
       }
+      if (url.pathname === '/api/admin/focus' && request.method === 'GET') return json(await temple.focus());
+      if (url.pathname === '/api/admin/focus' && request.method === 'PUT') {
+        const body = await request.json().catch(() => ({}));
+        const week = Number(body.week), types = Array.isArray(body.types) ? TYPES.filter(t => body.types.includes(t)) : [];
+        if (!Number.isInteger(week) || week < 1 || week > 52) return json({ error: 'Pick a week from 1 to 52.' }, 400);
+        if (!types.length) return json({ error: 'Pick at least one ordinance.' }, 400);
+        return json(await temple.setFocus({ week, types }));
+      }
       const del = url.pathname.match(/^\/api\/admin\/submissions\/(\d+)$/);
       if (del && request.method === 'DELETE') return json(await temple.remove(Number(del[1])));
     }
@@ -116,6 +124,18 @@ export class Temple extends DurableObject {
     return goal;
   }
 
+  // The weekly focus tag on the TV, picked on the admin page: a week number and the ordinances to focus on.
+  focus() {
+    const v = this.sql.exec("SELECT value FROM settings WHERE key = 'focus'").toArray()[0]?.value;
+    return v ? JSON.parse(v) : { week: 1, types: ['baptism'] };
+  }
+
+  setFocus(focus) {
+    this.sql.exec("INSERT INTO settings (key, value) VALUES ('focus', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify(focus));
+    this.broadcast({ type: 'totals', totals: this.totals() });
+    return focus;
+  }
+
   submit(entry) {
     // A phone retrying after a dropped connection sends the same clientId; count it once.
     if (entry.clientId && this.sql.exec('SELECT 1 FROM submissions WHERE client_id = ?', entry.clientId).toArray().length) {
@@ -139,7 +159,7 @@ export class Temple extends DurableObject {
   }
 
   broadcast(msg) {
-    const text = JSON.stringify({ ...msg, goal: this.goal() });
+    const text = JSON.stringify({ ...msg, goal: this.goal(), focus: this.focus() });
     for (const ws of this.ctx.getWebSockets()) {
       try { ws.send(text); } catch {}
     }
@@ -148,7 +168,7 @@ export class Temple extends DurableObject {
   async fetch() {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
-    server.send(JSON.stringify({ type: 'totals', totals: this.totals(), goal: this.goal() }));
+    server.send(JSON.stringify({ type: 'totals', totals: this.totals(), goal: this.goal(), focus: this.focus() }));
     return new Response(null, { status: 101, webSocket: client });
   }
 

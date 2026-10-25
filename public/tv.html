@@ -561,26 +561,26 @@
   }
 
   // ---------- Weekly focus ----------
-  // Week 1 starts on ?start= (default Nov 1, 2026). ?week=N forces a week for previewing.
-  const START = new Date((params.get('start') || '2026-11-01') + 'T00:00:00');
-  const WEEKS = [
-    null,
-    { text: 'Week 1: Baptisms', bg: TYPES.baptism.color },
-    { text: 'Weeks 2 & 3: Initiatories & Endowments', bg: `linear-gradient(90deg, ${TYPES.initiatory.color}, ${TYPES.endowment.color})` },
-    null,
-    { text: 'Week 4: Sealings', bg: TYPES.sealCouple.color },
-  ];
-  WEEKS[3] = WEEKS[2];
-  function renderWeek() {
-    const n = params.get('week') ? Number(params.get('week')) : Math.floor((Date.now() - START) / 6048e5) + 1;
-    const w = WEEKS[Math.min(4, Math.max(1, n || 1))];
+  // Picked on the admin page (a week number and one or more ordinances) and sent with every server message.
+  const FOCUS_NAMES = { baptism: 'Baptisms', initiatory: 'Initiatories', endowment: 'Endowments',
+                        sealCouple: 'Couple Sealings', sealChild: 'Child Sealings' };
+  let focusKey = '';
+  function renderWeek(focus = { week: 1, types: ['baptism'] }) {
+    const key = JSON.stringify(focus);
+    if (key === focusKey) return;
+    focusKey = key;
+    const types = ORDER.filter(t => focus.types.includes(t));
+    const both = types.includes('sealCouple') && types.includes('sealChild');   // both kinds read as just "Sealings"
+    const names = types.filter(t => !(both && t === 'sealChild')).map(t => both && t === 'sealCouple' ? 'Sealings' : FOCUS_NAMES[t]);
+    const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' & ' + names.at(-1) : names[0];
+    const colors = types.map(t => TYPES[t].color);
     const tag = document.getElementById('week');
-    tag.textContent = w.text;
-    tag.style.background = w.bg;
+    tag.textContent = `Week ${focus.week}: ${list}`;
+    tag.style.fontSize = tag.textContent.length > 40 ? '24px' : tag.textContent.length > 30 ? '28px' : '';   // stay clear of the sun
+    tag.style.background = colors.length > 1 ? `linear-gradient(90deg, ${colors.join(', ')})` : colors[0];
     tag.style.boxShadow = '4px 5px 0 rgba(80,50,20,.35)';
   }
   renderWeek();
-  setInterval(renderWeek, 36e5);
 
   // ---------- QR ----------
   new QRCode(document.getElementById('qrcode'), { text: FORM_URL, width: 420, height: 420, colorDark: '#3b2412', colorLight: '#f6f1e6', correctLevel: QRCode.CorrectLevel.M });
@@ -1022,6 +1022,7 @@
         params.set('goal', goalFor(msg.goal));
         return location.replace('?' + params);
       }
+      if (msg.focus) renderWeek(msg.focus);
       if (msg.type === 'submit') submit(msg.counts);
       reconcile(msg.totals);
     };
