@@ -182,8 +182,10 @@
   const SLOT = { x: 960, y: 390 };           // coin slot on the roof
   const TOWER_X = 1300;
 
-  // Each pile figure stands for PER_FIG ordinances, so huge goals still fit the window.
-  const PER_FIG = Math.ceil(GOAL / 360);
+  // One pile figure per ordinance, so a bigger goal means smaller figures. Past MAX_FIGS they'd be too small to read
+  // (and the layout too slow to work out on a Pi), so each figure stands for PER_FIG ordinances instead.
+  const MAX_FIGS = 1500;
+  const PER_FIG = Math.ceil(GOAL / MAX_FIGS);
   const SLOTS = Math.ceil(GOAL / PER_FIG);
 
   // ---------- Stage scaling ----------
@@ -872,7 +874,8 @@
     const bag = [];
     ORDER.forEach(k => { for (let i = 0; i < Math.round(want * counts[k] / (total() || 1)); i++) bag.push(k); });
     while (bag.length < want) bag.push(ORDER[0]);
-    for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
+    const R = seeded(99);                            // same mix on every redraw, so the pile doesn't reshuffle
+    for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
     bag.slice(0, want).forEach(k => addToPile(k, false, pileCount++));
     maybeBake();
     renderCounts();
